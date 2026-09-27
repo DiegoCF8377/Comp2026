@@ -36,7 +36,7 @@ int pop(Stack *stack){
     }
     int popped = stack->arr[stack->top];
     stack->top--;
-    printf("Popped %d from the stack\n");
+    printf("Popped %d from the stack\n", popped);
     return popped;
 }
 
