@@ -1,0 +1,7 @@
+program testProgram;
+
+main{
+    print("Hola Patito");
+}
+
+end

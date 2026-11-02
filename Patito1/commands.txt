@@ -1,0 +1,14 @@
+Steps:
+# 1. Compile Phase 1 (Lexer)
+flex PatitoLexer.l
+gcc lex.yy.c -o lexer_phase
+
+# 2. Compile Phase 2 (Parser)
+bison -d -o parser.tab.c PatitoParser.y
+gcc parser.tab.c token_reader.c -o parser_phase
+
+# 3. Run Phase 1: Lexical Analysis
+./lexer_phase BabyDuckCode.txt
+
+# 4. Run Phase 2: Syntax Analysis
+./parser_phase < tokens.txt

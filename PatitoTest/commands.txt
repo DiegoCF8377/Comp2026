@@ -1,0 +1,23 @@
+Files:
+BabyDuckCode.txt
+Commands.txt
+lexer.l
+parser.y
+toekns.h
+
+Steps:
+# 1. Compile Phase 1 (Lexer)
+flex lexer.l
+gcc lex.yy.c -o lexer_phase
+
+# 2. Compile Phase 2 (Parser)
+bison parser.y
+gcc parser.tab.c -o parser_phase
+
+# 3. Run Phase 1: Lexical Analysis
+./lexer_phase sample_code.txt
+# Output: Creates tokens.txt containing all identified tokens
+
+# 4. Run Phase 2: Syntax Analysis
+./parser_phase
+# Output: Reads tokens.txt and validates language grammar
