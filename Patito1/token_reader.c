@@ -42,6 +42,7 @@ int yylex(void) {
         if (strcmp(token_name, "gt") == 0) return gt;
         if (strcmp(token_name, "lt") == 0) return lt;
         if (strcmp(token_name, "ne") == 0) return ne;
+        if (strcmp(token_name, "eq") == 0) return eq;
         if (strcmp(token_name, "plus") == 0) return plus;
         if (strcmp(token_name, "minus") == 0) return minus;
         if (strcmp(token_name, "mult") == 0) return mult;

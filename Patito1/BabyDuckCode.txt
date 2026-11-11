@@ -1,7 +1,16 @@
 program testProgram;
 
+var a : int;
+
 main{
+    while ( 10 < a ) do 
     print("Hola Patito");
+    ;
+    if (a > 5 ) [
+        print("Hola Patito");
+    ] else [
+        print("Hola Patito");
+    ];
 }
 
 end

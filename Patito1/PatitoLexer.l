@@ -44,6 +44,7 @@ void write_token(const char *lexeme, const char *value) {
 ">"                     { write_token("gt", yytext); }
 "<"                     { write_token("lt", yytext); }
 "!="                    { write_token("ne", yytext); }
+"=="                    { write_token("eq", yytext); }
 "+"                     { write_token("plus", yytext); }
 "-"                     { write_token("minus", yytext); }
 "*"                     { write_token("mult", yytext); }

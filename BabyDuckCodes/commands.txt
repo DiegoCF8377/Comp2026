@@ -12,3 +12,6 @@ gcc parser.tab.c token_reader.c -o parser_phase
 
 # 4. Run Phase 2: Syntax Analysis
 ./parser_phase < tokens.txt
+
+
+ rampo@ramposputer:~/Documents/repos/Comp2026$ ./BabyDuckCodes/run_all.sh

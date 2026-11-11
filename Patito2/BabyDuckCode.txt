@@ -1,0 +1,19 @@
+program testProgram;
+
+var gg , b , c : int;
+
+
+void funcionPatito ( a : int, da : float)[
+    {
+    a  = (1+2)*2.0;
+    print( a > da);
+}];
+void funcionPatito2 ( a : int, da : float)[
+    {
+    print( a > da);
+}];
+main{
+    print("Hola Patito");
+}
+
+end

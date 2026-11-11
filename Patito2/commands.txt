@@ -1,0 +1,5 @@
+bison -d PatitoParser.y
+flex PatitoLexer.l
+gcc PatitoParser.tab.c lex.yy.c semantic_structures.c semantic_cube.c Hash.c -o Patito
+
+./Patito BabyDuckCode.txt

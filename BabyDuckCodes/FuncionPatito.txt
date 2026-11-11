@@ -1,0 +1,13 @@
+program testProgram;
+
+var a , b , c : int;
+
+void funcionPatito ( param1 : int, param2 : float)[{
+    print( param1 > param2);
+}];
+
+main{
+    print("Hola Patito");
+}
+
+end

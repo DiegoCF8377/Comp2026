@@ -1,0 +1,12 @@
+Tprogram program
+id testProgram
+semicolon ;
+Tmain main
+lbrace {
+Tprint print
+lparen (
+cte_string "Hola Patito"
+rparen )
+semicolon ;
+rbrace }
+Tend end

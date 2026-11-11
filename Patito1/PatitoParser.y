@@ -4,6 +4,10 @@ void yyerror(const char *s);
 int yylex(void);
 %}
 
+%define parse.trace
+%define parse.error detailed
+
+
 %token Tprogram
 %token Tmain
 %token Tend
@@ -33,6 +37,7 @@ int yylex(void);
 %token gt
 %token lt
 %token ne
+%token eq
 %token plus
 %token minus
 %token mult
@@ -212,16 +217,19 @@ FuncsIDsContinuacion
 %%
 
 void yyerror(const char *s) {
-    fprintf(stderr, "Error: %s\n", s);
+    fprintf(stderr, "\n[SYNTAX ERROR] %s\n", s);
 }
 
 int main() {
+
+    yydebug = 0;
+
     int result = yyparse();
 
     if (result == 0) {
-        printf("Syntax analysis successful!\n");
+        printf("\nSyntax analysis successful!\n");
     } else {
-        printf("Syntax analysis failed.\n");
+        printf("\nSyntax analysis failed.\n");
     }
 
     return result;

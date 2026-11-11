@@ -39,7 +39,7 @@
 # define YY_YY_PARSER_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
-# define YYDEBUG 0
+# define YYDEBUG 1
 #endif
 #if YYDEBUG
 extern int yydebug;
@@ -81,15 +81,16 @@ extern int yydebug;
     gt = 282,                      /* gt  */
     lt = 283,                      /* lt  */
     ne = 284,                      /* ne  */
-    plus = 285,                    /* plus  */
-    minus = 286,                   /* minus  */
-    mult = 287,                    /* mult  */
-    divi = 288,                    /* divi  */
-    cte_string = 289,              /* cte_string  */
-    cte_float = 290,               /* cte_float  */
-    cte_int = 291,                 /* cte_int  */
-    id = 292,                      /* id  */
-    unknown = 293                  /* unknown  */
+    eq = 285,                      /* eq  */
+    plus = 286,                    /* plus  */
+    minus = 287,                   /* minus  */
+    mult = 288,                    /* mult  */
+    divi = 289,                    /* divi  */
+    cte_string = 290,              /* cte_string  */
+    cte_float = 291,               /* cte_float  */
+    cte_int = 292,                 /* cte_int  */
+    id = 293,                      /* id  */
+    unknown = 294                  /* unknown  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
