@@ -45,7 +45,7 @@
 extern int yydebug;
 #endif
 /* "%code requires" blocks.  */
-#line 15 "PatitoParser.y"
+#line 255 "PatitoParser.y"
 
     #include "semantic_structures.h"
 
@@ -105,7 +105,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 66 "PatitoParser.y"
+#line 306 "PatitoParser.y"
 
     char *str;
     int type;

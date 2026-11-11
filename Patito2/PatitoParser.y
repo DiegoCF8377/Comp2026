@@ -1,9 +1,249 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
-
+#include "PatitoParser.tab.h"
 #include "semantic_structures.h"
 #include "semantic_cube.h"
+#include "stack.h"
+#include "quadruples.h"
+#include <string.h>
+
+Stack operator_stack;
+Stack operand_stack;
+Stack type_stack;
+
+QuadrupleList quadruples;
+static int temp_counter = 0;
+
+/* Convierte los tokens de operadores a su representación textual. */
+static const char *operator_to_string(int token) {
+    switch (token) {
+        case plus:      return "+";
+        case minus:     return "-";
+        case mult:      return "*";
+        case divi:      return "/";
+        case gt:        return ">";
+        case lt:        return "<";
+        case eq:        return "==";
+        case ne:        return "!=";
+        case assign_op: return "=";
+        default:        return "?";
+    }
+}
+
+/* Genera nombres temporales: T1, T2, T3... */
+static void generate_temp(char *buffer, size_t size) {
+    snprintf(buffer, size, "T%d", ++temp_counter);
+}
+
+/* Guarda un operando y su tipo en sus respectivas pilas. */
+static void push_expression_value(const char *operand, int type) {
+    if (!stack_push_operand(&operand_stack, operand)) {
+        fprintf(stderr, "Error: could not push operand.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (!stack_push_type(&type_stack, type)) {
+        fprintf(stderr, "Error: could not push type.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Extrae un operando y su tipo.
+ * La función transfiere la propiedad del string al llamador.
+ */
+static int pop_expression_value(char **operand, int *type) {
+    StackItem operand_item;
+    StackItem type_item;
+
+    if (!stack_pop(&operand_stack, &operand_item)) {
+        fprintf(stderr, "Error: operand stack is empty.\n");
+        return 0;
+    }
+
+    if (!stack_pop(&type_stack, &type_item)) {
+        fprintf(stderr, "Error: type stack is empty.\n");
+        stack_item_destroy(&operand_item);
+        return 0;
+    }
+
+    *operand = operand_item.lexeme;
+    *type = type_item.data_type;
+
+    /* Evitamos liberar el string transferido al llamador. */
+    operand_item.lexeme = NULL;
+
+    stack_item_destroy(&operand_item);
+    stack_item_destroy(&type_item);
+
+    return 1;
+}
+
+/*
+ * Reduce una operación binaria:
+ *
+ *     left_operand operator right_operand
+ *
+ * Genera un temporal y guarda el resultado en las pilas.
+ */
+static int reduce_pending_operation(void) {
+    StackItem operator_item;
+    char *right_operand = NULL;
+    char *left_operand = NULL;
+
+    int right_type;
+    int left_type;
+
+    char result_temp[QUAD_FIELD_SIZE];
+
+    if (!stack_pop(&operator_stack, &operator_item)) {
+        fprintf(stderr, "Error: operator stack is empty.\n");
+        return TYPE_ERROR;
+    }
+
+    int operator_token = operator_item.token;
+    stack_item_destroy(&operator_item);
+
+    /* Primero extraemos el operando derecho. */
+    if (!pop_expression_value(&right_operand, &right_type)) {
+        return TYPE_ERROR;
+    }
+
+    /* Después extraemos el operando izquierdo. */
+    if (!pop_expression_value(&left_operand, &left_type)) {
+        free(right_operand);
+        return TYPE_ERROR;
+    }
+
+    /* Validación mediante el cubo semántico. */
+    int result_type = validate_operation(
+        left_type,
+        operator_token,
+        right_type
+    );
+
+    if (result_type == TYPE_ERROR) {
+        free(left_operand);
+        free(right_operand);
+
+        /* Mantenemos las pilas balanceadas. */
+        push_expression_value("ERROR", TYPE_ERROR);
+
+        return TYPE_ERROR;
+    }
+
+    generate_temp(result_temp, sizeof(result_temp));
+
+    quadruples_add(
+        &quadruples,
+        operator_to_string(operator_token),
+        left_operand,
+        right_operand,
+        result_temp
+    );
+
+    printf(
+        "[QUAD] (%s, %s, %s, %s)\n",
+        operator_to_string(operator_token),
+        left_operand,
+        right_operand,
+        result_temp
+    );
+
+    free(left_operand);
+    free(right_operand);
+
+    /* El resultado de la operación pasa a ser un nuevo operando. */
+    push_expression_value(result_temp, result_type);
+
+    return result_type;
+}
+
+/* Aplica el operador unario negativo. */
+static int apply_unary_minus(void) {
+    char *operand = NULL;
+    int operand_type;
+
+    char result_temp[QUAD_FIELD_SIZE];
+
+    if (!pop_expression_value(&operand, &operand_type)) {
+        return TYPE_ERROR;
+    }
+
+    if (operand_type == TYPE_ERROR) {
+        push_expression_value("ERROR", TYPE_ERROR);
+        free(operand);
+        return TYPE_ERROR;
+    }
+
+    generate_temp(result_temp, sizeof(result_temp));
+
+    quadruples_add(
+        &quadruples,
+        "NEG",
+        operand,
+        "-",
+        result_temp
+    );
+
+    free(operand);
+
+    push_expression_value(result_temp, operand_type);
+
+    return operand_type;
+}
+/* Consume el resultado de una expresión y genera un cuádruplo PRINT. */
+static void emit_print(void) {
+    char *operand = NULL;
+    int type;
+
+    if (!pop_expression_value(&operand, &type)) {
+        return;
+    }
+
+    quadruples_add(
+        &quadruples,
+        "PRINT",
+        operand,
+        "-",
+        "-"
+    );
+
+    free(operand);
+}
+
+/* Consume el resultado de una expresión y genera un cuádruplo RETURN. */
+static void emit_return(void) {
+    char *operand = NULL;
+    int type;
+
+    if (!pop_expression_value(&operand, &type)) {
+        return;
+    }
+
+    quadruples_add(
+        &quadruples,
+        "RETURN",
+        operand,
+        "-",
+        "-"
+    );
+
+    free(operand);
+}
+
+/* Descarta el resultado de una expresión después de validarlo. */
+static void discard_expression(void) {
+    char *operand = NULL;
+    int type;
+
+    if (pop_expression_value(&operand, &type)) {
+        free(operand);
+    }
+}
+
+
 
 void yyerror(const char *s);
 int yylex(void);
@@ -95,24 +335,40 @@ EXPRESION
           $$ = $1;
       }
 
-    | EXP gt EXP
+    | EXP gt
       {
-          $$ = validate_operation($1, gt, $3);
+          stack_push_operator(&operator_stack, gt);
+      }
+      EXP
+      {
+          $$ = reduce_pending_operation();
       }
 
-    | EXP lt EXP
+    | EXP lt
       {
-          $$ = validate_operation($1, lt, $3);
+          stack_push_operator(&operator_stack, lt);
+      }
+      EXP
+      {
+          $$ = reduce_pending_operation();
       }
 
-    | EXP eq EXP
+    | EXP eq
       {
-          $$ = validate_operation($1, eq, $3);
+          stack_push_operator(&operator_stack, eq);
+      }
+      EXP
+      {
+          $$ = reduce_pending_operation();
       }
 
-    | EXP ne EXP
+    | EXP ne
       {
-          $$ = validate_operation($1, ne, $3);
+          stack_push_operator(&operator_stack, ne);
+      }
+      EXP
+      {
+          $$ = reduce_pending_operation();
       }
     ;
 
@@ -122,7 +378,26 @@ EXPRESION
 ASSIGN
     : id assign_op EXPRESION semicolon
       {
-          validate_assignment($1, $3);
+          char *expression_operand = NULL;
+          int expression_type;
+
+          if (pop_expression_value(
+                  &expression_operand,
+                  &expression_type)) {
+
+              validate_assignment($1, expression_type);
+
+              quadruples_add(
+                  &quadruples,
+                  "=",
+                  expression_operand,
+                  "-",
+                  $1
+              );
+
+              free(expression_operand);
+          }
+
           free($1);
       }
     ;
@@ -131,14 +406,20 @@ ASSIGN
 CTE
     : cte_int
       {
-          free($1);
+          push_expression_value($1, Tint);
+
           $$ = Tint;
+
+          free($1);
       }
 
     | cte_float
       {
-          free($1);
+          push_expression_value($1, Tfloat);
+
           $$ = Tfloat;
+
+          free($1);
       }
     ;
 
@@ -167,14 +448,22 @@ BodyCont
 
 
 EXP
-    : EXP plus TERMINO
+    : EXP plus
       {
-          $$ = validate_operation($1, plus, $3);
+          stack_push_operator(&operator_stack, plus);
+      }
+      TERMINO
+      {
+          $$ = reduce_pending_operation();
       }
 
-    | EXP minus TERMINO
+    | EXP minus
       {
-          $$ = validate_operation($1, minus, $3);
+          stack_push_operator(&operator_stack, minus);
+      }
+      TERMINO
+      {
+          $$ = reduce_pending_operation();
       }
 
     | TERMINO
@@ -186,14 +475,22 @@ EXP
 
 
 TERMINO
-    : TERMINO mult FACTOR
+    : TERMINO mult
       {
-          $$ = validate_operation($1, mult, $3);
+          stack_push_operator(&operator_stack, mult);
+      }
+      FACTOR
+      {
+          $$ = reduce_pending_operation();
       }
 
-    | TERMINO divi FACTOR
+    | TERMINO divi
       {
-          $$ = validate_operation($1, divi, $3);
+          stack_push_operator(&operator_stack, divi);
+      }
+      FACTOR
+      {
+          $$ = reduce_pending_operation();
       }
 
     | FACTOR
@@ -227,7 +524,22 @@ FCallMultiple
 RETURN
     : Treturn EXPRESION semicolon
       {
-          validate_return($2);
+          char *operand = NULL;
+          int expression_type;
+
+          if (pop_expression_value(&operand, &expression_type)) {
+              validate_return(expression_type);
+
+              quadruples_add(
+                  &quadruples,
+                  "RETURN",
+                  operand,
+                  "-",
+                  "-"
+              );
+
+              free(operand);
+          }
       }
     ;
 
@@ -235,6 +547,15 @@ READ
     : Tread lparen id rparen semicolon
       {
           validate_read($3);
+
+          quadruples_add(
+              &quadruples,
+              "READ",
+              "-",
+              "-",
+              $3
+          );
+
           free($3);
       }
     ;
@@ -292,10 +613,22 @@ PRINT
     ;
 
 PrintContenido
-    : EXPRESION PrintContenidoContinuacion
+    : EXPRESION
+      {
+          emit_print();
+      }
+      PrintContenidoContinuacion
 
     | cte_string
       {
+          quadruples_add(
+              &quadruples,
+              "PRINT",
+              $1,
+              "-",
+              "-"
+          );
+
           free($1);
       }
       PrintContenidoContinuacion
@@ -310,14 +643,15 @@ CYCLE
     : Twhile lparen EXPRESION rparen Tdo STATEMENT semicolon
       {
           validate_condition($3);
+          discard_expression();
       }
     ;
-
 
 CONDITION
     : Tif lparen EXPRESION rparen STATEMENT ConditionElse semicolon
       {
           validate_condition($3);
+          discard_expression();
       }
     ;
 
@@ -356,14 +690,19 @@ FactorStart
 
     | minus FactorContinuacion
       {
-          $$ = $2;
+          $$ = apply_unary_minus();
       }
     ;
 
 FactorContinuacion
     : id
       {
-          $$ = get_variable_type($1);
+          int variable_type = get_variable_type($1);
+
+          push_expression_value($1, variable_type);
+
+          $$ = variable_type;
+
           free($1);
       }
 
@@ -442,6 +781,12 @@ int main(int argc, char **argv) {
     }
 
     yyin = input;
+    
+    stack_init(&operator_stack, 20);
+    stack_init(&operand_stack, 20);
+    stack_init(&type_stack, 20);
+
+    quadruples_init(&quadruples, 100);
 
     init_semantic_cube();
     init_semantic_context();
@@ -459,6 +804,15 @@ int main(int argc, char **argv) {
     }
 
     fclose(input);
+    printf("\nGENERATED QUADRUPLES:\n");
 
+    quadruples_print(&quadruples, stdout);
+
+    stack_destroy(&operator_stack);
+    stack_destroy(&operand_stack);
+    stack_destroy(&type_stack);
+
+    quadruples_destroy(&quadruples);
+    
     return (result != 0 || semantic_context.semantic_errors > 0);
 }
