@@ -1,14 +1,27 @@
 program testProgram;
 
-var a , b , c : int;
+var A, B, C, D, E, F , G, H, J,K: float;
 
 
 
 main{
-    a = 1;
-    b = 2;
-    c = a + b;
-    print(c);
+    A = B + C * (D - E / F) * H;
+    B = E - F;
+    while (A * B - C > D *E /(G + H)) do [
+        H = J * K + B;
+        if (B < H) [
+            while (B > A + C) do [
+                print( A + B * C, D-E);
+                B = B -J;
+            ];
+        ] else [
+            do [
+                A = A + B;
+                print(B- D);
+            ] while (A-D < C +B);
+        ];
+    ] ;
+    F = A + B;
 }
 
 end

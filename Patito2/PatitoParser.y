@@ -15,233 +15,6 @@ Stack type_stack;
 QuadrupleList quadruples;
 static int temp_counter = 0;
 
-/* Convierte los tokens de operadores a su representación textual. */
-static const char *operator_to_string(int token) {
-    switch (token) {
-        case plus:      return "+";
-        case minus:     return "-";
-        case mult:      return "*";
-        case divi:      return "/";
-        case gt:        return ">";
-        case lt:        return "<";
-        case eq:        return "==";
-        case ne:        return "!=";
-        case assign_op: return "=";
-        default:        return "?";
-    }
-}
-
-/* Genera nombres temporales: T1, T2, T3... */
-static void generate_temp(char *buffer, size_t size) {
-    snprintf(buffer, size, "T%d", ++temp_counter);
-}
-
-/* Guarda un operando y su tipo en sus respectivas pilas. */
-static void push_expression_value(const char *operand, int type) {
-    if (!stack_push_operand(&operand_stack, operand)) {
-        fprintf(stderr, "Error: could not push operand.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (!stack_push_type(&type_stack, type)) {
-        fprintf(stderr, "Error: could not push type.\n");
-        exit(EXIT_FAILURE);
-    }
-}
-
-/*
- * Extrae un operando y su tipo.
- * La función transfiere la propiedad del string al llamador.
- */
-static int pop_expression_value(char **operand, int *type) {
-    StackItem operand_item;
-    StackItem type_item;
-
-    if (!stack_pop(&operand_stack, &operand_item)) {
-        fprintf(stderr, "Error: operand stack is empty.\n");
-        return 0;
-    }
-
-    if (!stack_pop(&type_stack, &type_item)) {
-        fprintf(stderr, "Error: type stack is empty.\n");
-        stack_item_destroy(&operand_item);
-        return 0;
-    }
-
-    *operand = operand_item.lexeme;
-    *type = type_item.data_type;
-
-    /* Evitamos liberar el string transferido al llamador. */
-    operand_item.lexeme = NULL;
-
-    stack_item_destroy(&operand_item);
-    stack_item_destroy(&type_item);
-
-    return 1;
-}
-
-/*
- * Reduce una operación binaria:
- *
- *     left_operand operator right_operand
- *
- * Genera un temporal y guarda el resultado en las pilas.
- */
-static int reduce_pending_operation(void) {
-    StackItem operator_item;
-    char *right_operand = NULL;
-    char *left_operand = NULL;
-
-    int right_type;
-    int left_type;
-
-    char result_temp[QUAD_FIELD_SIZE];
-
-    if (!stack_pop(&operator_stack, &operator_item)) {
-        fprintf(stderr, "Error: operator stack is empty.\n");
-        return TYPE_ERROR;
-    }
-
-    int operator_token = operator_item.token;
-    stack_item_destroy(&operator_item);
-
-    /* Primero extraemos el operando derecho. */
-    if (!pop_expression_value(&right_operand, &right_type)) {
-        return TYPE_ERROR;
-    }
-
-    /* Después extraemos el operando izquierdo. */
-    if (!pop_expression_value(&left_operand, &left_type)) {
-        free(right_operand);
-        return TYPE_ERROR;
-    }
-
-    /* Validación mediante el cubo semántico. */
-    int result_type = validate_operation(
-        left_type,
-        operator_token,
-        right_type
-    );
-
-    if (result_type == TYPE_ERROR) {
-        free(left_operand);
-        free(right_operand);
-
-        /* Mantenemos las pilas balanceadas. */
-        push_expression_value("ERROR", TYPE_ERROR);
-
-        return TYPE_ERROR;
-    }
-
-    generate_temp(result_temp, sizeof(result_temp));
-
-    quadruples_add(
-        &quadruples,
-        operator_to_string(operator_token),
-        left_operand,
-        right_operand,
-        result_temp
-    );
-
-    printf(
-        "[QUAD] (%s, %s, %s, %s)\n",
-        operator_to_string(operator_token),
-        left_operand,
-        right_operand,
-        result_temp
-    );
-
-    free(left_operand);
-    free(right_operand);
-
-    /* El resultado de la operación pasa a ser un nuevo operando. */
-    push_expression_value(result_temp, result_type);
-
-    return result_type;
-}
-
-/* Aplica el operador unario negativo. */
-static int apply_unary_minus(void) {
-    char *operand = NULL;
-    int operand_type;
-
-    char result_temp[QUAD_FIELD_SIZE];
-
-    if (!pop_expression_value(&operand, &operand_type)) {
-        return TYPE_ERROR;
-    }
-
-    if (operand_type == TYPE_ERROR) {
-        push_expression_value("ERROR", TYPE_ERROR);
-        free(operand);
-        return TYPE_ERROR;
-    }
-
-    generate_temp(result_temp, sizeof(result_temp));
-
-    quadruples_add(
-        &quadruples,
-        "NEG",
-        operand,
-        "-",
-        result_temp
-    );
-
-    free(operand);
-
-    push_expression_value(result_temp, operand_type);
-
-    return operand_type;
-}
-/* Consume el resultado de una expresión y genera un cuádruplo PRINT. */
-static void emit_print(void) {
-    char *operand = NULL;
-    int type;
-
-    if (!pop_expression_value(&operand, &type)) {
-        return;
-    }
-
-    quadruples_add(
-        &quadruples,
-        "PRINT",
-        operand,
-        "-",
-        "-"
-    );
-
-    free(operand);
-}
-
-/* Consume el resultado de una expresión y genera un cuádruplo RETURN. */
-static void emit_return(void) {
-    char *operand = NULL;
-    int type;
-
-    if (!pop_expression_value(&operand, &type)) {
-        return;
-    }
-
-    quadruples_add(
-        &quadruples,
-        "RETURN",
-        operand,
-        "-",
-        "-"
-    );
-
-    free(operand);
-}
-
-/* Descarta el resultado de una expresión después de validarlo. */
-static void discard_expression(void) {
-    char *operand = NULL;
-    int type;
-
-    if (pop_expression_value(&operand, &type)) {
-        free(operand);
-    }
-}
 
 
 
@@ -336,40 +109,18 @@ EXPRESION
       }
 
     | EXP gt
-      {
-          stack_push_operator(&operator_stack, gt);
-      }
+      {stack_push_operator(&operator_stack, gt);}
       EXP
-      {
-          $$ = reduce_pending_operation();
-      }
+      {$$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter); }
 
-    | EXP lt
-      {
-          stack_push_operator(&operator_stack, lt);
-      }
-      EXP
-      {
-          $$ = reduce_pending_operation();
-      }
+    | EXP lt{stack_push_operator(&operator_stack, lt);}
+      EXP{$$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);}
 
-    | EXP eq
-      {
-          stack_push_operator(&operator_stack, eq);
-      }
-      EXP
-      {
-          $$ = reduce_pending_operation();
-      }
+    | EXP eq {stack_push_operator(&operator_stack, eq);}
+      EXP {$$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);}
 
-    | EXP ne
-      {
-          stack_push_operator(&operator_stack, ne);
-      }
-      EXP
-      {
-          $$ = reduce_pending_operation();
-      }
+    | EXP ne {stack_push_operator(&operator_stack, ne);}
+      EXP {$$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);}
     ;
 
 
@@ -381,9 +132,7 @@ ASSIGN
           char *expression_operand = NULL;
           int expression_type;
 
-          if (pop_expression_value(
-                  &expression_operand,
-                  &expression_type)) {
+          if (pop_expression_value(&expression_operand, &expression_type,&operand_stack,&type_stack)) {
 
               validate_assignment($1, expression_type);
 
@@ -406,7 +155,7 @@ ASSIGN
 CTE
     : cte_int
       {
-          push_expression_value($1, Tint);
+          push_expression_value($1, Tint,&operand_stack,&type_stack);
 
           $$ = Tint;
 
@@ -415,7 +164,7 @@ CTE
 
     | cte_float
       {
-          push_expression_value($1, Tfloat);
+          push_expression_value($1, Tfloat,&operand_stack,&type_stack);
 
           $$ = Tfloat;
 
@@ -454,7 +203,7 @@ EXP
       }
       TERMINO
       {
-          $$ = reduce_pending_operation();
+          $$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
 
     | EXP minus
@@ -463,7 +212,7 @@ EXP
       }
       TERMINO
       {
-          $$ = reduce_pending_operation();
+          $$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
 
     | TERMINO
@@ -481,7 +230,7 @@ TERMINO
       }
       FACTOR
       {
-          $$ = reduce_pending_operation();
+          $$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
 
     | TERMINO divi
@@ -490,7 +239,7 @@ TERMINO
       }
       FACTOR
       {
-          $$ = reduce_pending_operation();
+          $$ = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
 
     | FACTOR
@@ -527,7 +276,7 @@ RETURN
           char *operand = NULL;
           int expression_type;
 
-          if (pop_expression_value(&operand, &expression_type)) {
+          if (pop_expression_value(&operand, &expression_type,&operand_stack,&type_stack)) {
               validate_return(expression_type);
 
               quadruples_add(
@@ -615,7 +364,7 @@ PRINT
 PrintContenido
     : EXPRESION
       {
-          emit_print();
+          emit_print(&quadruples,&operand_stack,&type_stack);
       }
       PrintContenidoContinuacion
 
@@ -643,7 +392,12 @@ CYCLE
     : Twhile lparen EXPRESION rparen Tdo STATEMENT semicolon
       {
           validate_condition($3);
-          discard_expression();
+          discard_expression(&operand_stack,&type_stack);
+      }
+    | Tdo STATEMENT Twhile lparen EXPRESION rparen  semicolon
+      {
+          validate_condition($5);
+          discard_expression(&operand_stack,&type_stack);
       }
     ;
 
@@ -651,7 +405,7 @@ CONDITION
     : Tif lparen EXPRESION rparen STATEMENT ConditionElse semicolon
       {
           validate_condition($3);
-          discard_expression();
+          discard_expression(&operand_stack,&type_stack);
       }
     ;
 
@@ -690,7 +444,7 @@ FactorStart
 
     | minus FactorContinuacion
       {
-          $$ = apply_unary_minus();
+          $$ = apply_unary_minus(&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
     ;
 
@@ -699,7 +453,7 @@ FactorContinuacion
       {
           int variable_type = get_variable_type($1);
 
-          push_expression_value($1, variable_type);
+          push_expression_value($1, variable_type,&operand_stack,&type_stack);
 
           $$ = variable_type;
 

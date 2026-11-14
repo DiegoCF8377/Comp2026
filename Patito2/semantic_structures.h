@@ -1,6 +1,10 @@
 #ifndef SEMANTIC_STRUCTURES_H
 #define SEMANTIC_STRUCTURES_H
 
+#include <stddef.h>
+
+#include "stack.h"
+#include "quadruples.h"
 #include "Hash.h"
 
 /* Una variable */
@@ -63,5 +67,61 @@ int validate_operation(int left, int op, int right);
 
 int get_variable_type(const char *name);
 int get_function_return_type(const char *name);
+
+
+/* Generates temporary names: T1, T2, T3... */
+void generate_temp(char *buffer, size_t size, int *temp_counter);
+
+/* Pushes an operand and its corresponding type. */
+void push_expression_value(
+    const char *operand,
+    int type,
+    Stack *operand_stack,
+    Stack *type_stack
+);
+
+/* Extracts an operand and its corresponding type. */
+int pop_expression_value(
+    char **operand,
+    int *type,
+    Stack *operand_stack,
+    Stack *type_stack
+);
+
+/* Reduces a pending binary operation. */
+int reduce_pending_operation(
+    Stack *operator_stack,
+    QuadrupleList *quadruples,
+    Stack *operand_stack,
+    Stack *type_stack,
+    int *temp_counter
+);
+
+/* Applies unary minus. */
+int apply_unary_minus(
+    QuadrupleList *quadruples,
+    Stack *operand_stack,
+    Stack *type_stack,
+    int *temp_counter
+);
+
+/* Generates PRINT and RETURN quadruples. */
+void emit_print(
+    QuadrupleList *quadruples,
+    Stack *operand_stack,
+    Stack *type_stack
+);
+
+void emit_return(
+    QuadrupleList *quadruples,
+    Stack *operand_stack,
+    Stack *type_stack
+);
+
+/* Discards an expression result. */
+void discard_expression(
+    Stack *operand_stack,
+    Stack *type_stack
+);
 
 #endif

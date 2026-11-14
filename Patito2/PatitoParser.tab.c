@@ -85,233 +85,6 @@ Stack type_stack;
 QuadrupleList quadruples;
 static int temp_counter = 0;
 
-/* Convierte los tokens de operadores a su representación textual. */
-static const char *operator_to_string(int token) {
-    switch (token) {
-        case plus:      return "+";
-        case minus:     return "-";
-        case mult:      return "*";
-        case divi:      return "/";
-        case gt:        return ">";
-        case lt:        return "<";
-        case eq:        return "==";
-        case ne:        return "!=";
-        case assign_op: return "=";
-        default:        return "?";
-    }
-}
-
-/* Genera nombres temporales: T1, T2, T3... */
-static void generate_temp(char *buffer, size_t size) {
-    snprintf(buffer, size, "T%d", ++temp_counter);
-}
-
-/* Guarda un operando y su tipo en sus respectivas pilas. */
-static void push_expression_value(const char *operand, int type) {
-    if (!stack_push_operand(&operand_stack, operand)) {
-        fprintf(stderr, "Error: could not push operand.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (!stack_push_type(&type_stack, type)) {
-        fprintf(stderr, "Error: could not push type.\n");
-        exit(EXIT_FAILURE);
-    }
-}
-
-/*
- * Extrae un operando y su tipo.
- * La función transfiere la propiedad del string al llamador.
- */
-static int pop_expression_value(char **operand, int *type) {
-    StackItem operand_item;
-    StackItem type_item;
-
-    if (!stack_pop(&operand_stack, &operand_item)) {
-        fprintf(stderr, "Error: operand stack is empty.\n");
-        return 0;
-    }
-
-    if (!stack_pop(&type_stack, &type_item)) {
-        fprintf(stderr, "Error: type stack is empty.\n");
-        stack_item_destroy(&operand_item);
-        return 0;
-    }
-
-    *operand = operand_item.lexeme;
-    *type = type_item.data_type;
-
-    /* Evitamos liberar el string transferido al llamador. */
-    operand_item.lexeme = NULL;
-
-    stack_item_destroy(&operand_item);
-    stack_item_destroy(&type_item);
-
-    return 1;
-}
-
-/*
- * Reduce una operación binaria:
- *
- *     left_operand operator right_operand
- *
- * Genera un temporal y guarda el resultado en las pilas.
- */
-static int reduce_pending_operation(void) {
-    StackItem operator_item;
-    char *right_operand = NULL;
-    char *left_operand = NULL;
-
-    int right_type;
-    int left_type;
-
-    char result_temp[QUAD_FIELD_SIZE];
-
-    if (!stack_pop(&operator_stack, &operator_item)) {
-        fprintf(stderr, "Error: operator stack is empty.\n");
-        return TYPE_ERROR;
-    }
-
-    int operator_token = operator_item.token;
-    stack_item_destroy(&operator_item);
-
-    /* Primero extraemos el operando derecho. */
-    if (!pop_expression_value(&right_operand, &right_type)) {
-        return TYPE_ERROR;
-    }
-
-    /* Después extraemos el operando izquierdo. */
-    if (!pop_expression_value(&left_operand, &left_type)) {
-        free(right_operand);
-        return TYPE_ERROR;
-    }
-
-    /* Validación mediante el cubo semántico. */
-    int result_type = validate_operation(
-        left_type,
-        operator_token,
-        right_type
-    );
-
-    if (result_type == TYPE_ERROR) {
-        free(left_operand);
-        free(right_operand);
-
-        /* Mantenemos las pilas balanceadas. */
-        push_expression_value("ERROR", TYPE_ERROR);
-
-        return TYPE_ERROR;
-    }
-
-    generate_temp(result_temp, sizeof(result_temp));
-
-    quadruples_add(
-        &quadruples,
-        operator_to_string(operator_token),
-        left_operand,
-        right_operand,
-        result_temp
-    );
-
-    printf(
-        "[QUAD] (%s, %s, %s, %s)\n",
-        operator_to_string(operator_token),
-        left_operand,
-        right_operand,
-        result_temp
-    );
-
-    free(left_operand);
-    free(right_operand);
-
-    /* El resultado de la operación pasa a ser un nuevo operando. */
-    push_expression_value(result_temp, result_type);
-
-    return result_type;
-}
-
-/* Aplica el operador unario negativo. */
-static int apply_unary_minus(void) {
-    char *operand = NULL;
-    int operand_type;
-
-    char result_temp[QUAD_FIELD_SIZE];
-
-    if (!pop_expression_value(&operand, &operand_type)) {
-        return TYPE_ERROR;
-    }
-
-    if (operand_type == TYPE_ERROR) {
-        push_expression_value("ERROR", TYPE_ERROR);
-        free(operand);
-        return TYPE_ERROR;
-    }
-
-    generate_temp(result_temp, sizeof(result_temp));
-
-    quadruples_add(
-        &quadruples,
-        "NEG",
-        operand,
-        "-",
-        result_temp
-    );
-
-    free(operand);
-
-    push_expression_value(result_temp, operand_type);
-
-    return operand_type;
-}
-/* Consume el resultado de una expresión y genera un cuádruplo PRINT. */
-static void emit_print(void) {
-    char *operand = NULL;
-    int type;
-
-    if (!pop_expression_value(&operand, &type)) {
-        return;
-    }
-
-    quadruples_add(
-        &quadruples,
-        "PRINT",
-        operand,
-        "-",
-        "-"
-    );
-
-    free(operand);
-}
-
-/* Consume el resultado de una expresión y genera un cuádruplo RETURN. */
-static void emit_return(void) {
-    char *operand = NULL;
-    int type;
-
-    if (!pop_expression_value(&operand, &type)) {
-        return;
-    }
-
-    quadruples_add(
-        &quadruples,
-        "RETURN",
-        operand,
-        "-",
-        "-"
-    );
-
-    free(operand);
-}
-
-/* Descarta el resultado de una expresión después de validarlo. */
-static void discard_expression(void) {
-    char *operand = NULL;
-    int type;
-
-    if (pop_expression_value(&operand, &type)) {
-        free(operand);
-    }
-}
 
 
 
@@ -321,7 +94,7 @@ int yylex(void);
 extern FILE *yyin;
 extern int yylineno;
 
-#line 325 "PatitoParser.tab.c"
+#line 98 "PatitoParser.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -767,16 +540,16 @@ union yyalloc
 /* YYFINAL -- State number of the termination state.  */
 #define YYFINAL  4
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   128
+#define YYLAST   137
 
 /* YYNTOKENS -- Number of terminals.  */
 #define YYNTOKENS  40
 /* YYNNTS -- Number of nonterminals.  */
 #define YYNNTS  51
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  87
+#define YYNRULES  88
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  158
+#define YYNSTATES  165
 
 /* YYMAXUTOK -- Last valid token kind.  */
 #define YYMAXUTOK   294
@@ -829,15 +602,15 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int16 yyrline[] =
 {
-       0,   320,   320,   328,   329,   333,   339,   338,   348,   347,
-     357,   356,   366,   365,   379,   407,   416,   427,   428,   429,
-     430,   431,   432,   433,   434,   438,   439,   442,   445,   446,
-     452,   451,   461,   460,   469,   479,   478,   488,   487,   496,
-     503,   510,   513,   514,   517,   520,   521,   525,   547,   565,
-     566,   570,   575,   574,   581,   589,   594,   601,   606,   612,
-     617,   616,   623,   622,   638,   639,   643,   651,   659,   660,
-     664,   669,   674,   681,   686,   691,   698,   709,   717,   716,
-     729,   734,   741,   742,   747,   746,   755,   756
+       0,    93,    93,   101,   102,   106,   112,   111,   116,   116,
+     119,   119,   122,   122,   130,   156,   165,   176,   177,   178,
+     179,   180,   181,   182,   183,   187,   188,   191,   194,   195,
+     201,   200,   210,   209,   218,   228,   227,   237,   236,   245,
+     252,   259,   262,   263,   266,   269,   270,   274,   296,   314,
+     315,   319,   324,   323,   330,   338,   343,   350,   355,   361,
+     366,   365,   372,   371,   387,   388,   392,   397,   405,   413,
+     414,   418,   423,   428,   435,   440,   445,   452,   463,   471,
+     470,   483,   488,   495,   496,   501,   500,   509,   510
 };
 #endif
 
@@ -874,7 +647,7 @@ yysymbol_name (yysymbol_kind_t yysymbol)
 }
 #endif
 
-#define YYPACT_NINF (-110)
+#define YYPACT_NINF (-104)
 
 #define yypact_value_is_default(Yyn) \
   ((Yyn) == YYPACT_NINF)
@@ -888,22 +661,23 @@ yysymbol_name (yysymbol_kind_t yysymbol)
    STATE-NUM.  */
 static const yytype_int8 yypact[] =
 {
-       7,   -18,    24,    14,  -110,    27,    -3,     6,  -110,  -110,
-    -110,    -2,  -110,  -110,  -110,    44,  -110,     6,    -1,    46,
-      12,    34,  -110,  -110,    48,  -110,    11,    70,    55,    41,
-      58,    59,    60,    61,    20,    11,   -12,  -110,    11,    63,
-      69,  -110,  -110,  -110,  -110,  -110,  -110,  -110,    49,    -3,
-      20,    20,     9,    51,    20,    -8,    -8,  -110,  -110,    68,
-      75,  -110,    32,    33,  -110,  -110,  -110,  -110,    11,    67,
-      20,    20,  -110,  -110,  -110,    77,    72,  -110,  -110,    73,
-      74,  -110,  -110,    76,    79,    80,  -110,  -110,  -110,  -110,
-    -110,  -110,  -110,  -110,  -110,  -110,  -110,  -110,  -110,  -110,
-      82,    86,    83,  -110,    46,    81,    11,    88,    89,    89,
-      92,    93,  -110,    20,    20,    20,    20,    20,    20,    20,
-      20,  -110,    20,  -110,  -110,  -110,    27,   101,    11,     9,
-    -110,  -110,  -110,  -110,    37,    37,    37,    37,    33,    33,
-    -110,  -110,  -110,    94,    34,    11,    97,    98,  -110,    49,
-    -110,    90,  -110,  -110,  -110,  -110,   100,  -110
+      15,    14,    21,    54,  -104,    66,    35,    39,  -104,  -104,
+    -104,   -10,  -104,  -104,  -104,    70,  -104,    39,    37,     4,
+      38,    56,  -104,  -104,    63,  -104,    13,    76,    59,    46,
+      62,    64,    13,    65,    68,    22,    13,   -16,  -104,    13,
+      67,    69,  -104,  -104,  -104,  -104,  -104,  -104,  -104,    55,
+      35,    22,    22,    80,    -1,    57,    22,    19,    19,  -104,
+    -104,    73,    81,  -104,    34,     9,  -104,  -104,  -104,  -104,
+      13,    71,    22,    22,  -104,  -104,  -104,    82,    75,  -104,
+    -104,    78,    79,    84,  -104,  -104,    85,    86,    87,  -104,
+    -104,  -104,  -104,  -104,  -104,  -104,  -104,  -104,  -104,  -104,
+    -104,  -104,  -104,    88,    89,    90,  -104,     4,    91,    13,
+      99,    22,    94,    94,    98,   100,  -104,    22,    22,    22,
+      22,    22,    22,    22,    22,  -104,    22,  -104,  -104,  -104,
+      66,    93,    13,    96,    -1,  -104,  -104,  -104,  -104,     1,
+       1,     1,     1,     9,     9,  -104,  -104,  -104,   102,    56,
+      13,   101,   105,   106,  -104,    55,  -104,   103,  -104,  -104,
+    -104,  -104,  -104,   108,  -104
 };
 
 /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -912,43 +686,44 @@ static const yytype_int8 yypact[] =
 static const yytype_int8 yydefact[] =
 {
        0,     0,     0,     0,     1,    50,     0,     4,    49,    55,
-      51,     0,    57,    58,    80,     0,    81,     4,     0,     0,
-       0,     0,     3,    78,     0,    56,    29,     0,     0,    54,
-       0,     0,     0,     0,     0,    25,     0,    18,    29,     0,
-       0,    21,    17,    23,    22,    20,    19,     2,    83,     0,
-       0,     0,     0,     0,     0,     0,     0,    16,    15,    76,
-       0,    77,     5,    34,    71,    39,    72,    73,    25,     0,
-       0,    43,    28,    27,    41,     0,     0,    82,    53,     0,
-       0,    62,    60,     0,     0,     0,    76,    74,    75,    47,
-       6,     8,    12,    10,    30,    32,    35,    37,    26,    24,
-       0,    46,     0,    42,     0,     0,     0,     0,    65,    65,
-       0,     0,    70,     0,     0,     0,     0,     0,     0,     0,
-       0,    14,     0,    44,    40,    84,    50,    69,     0,     0,
-      63,    61,    59,    48,     7,     9,    13,    11,    31,    33,
-      36,    38,    45,    87,     0,     0,     0,     0,    64,     0,
-      85,     0,    68,    67,    66,    86,     0,    79
+      51,     0,    57,    58,    81,     0,    82,     4,     0,     0,
+       0,     0,     3,    79,     0,    56,    29,     0,     0,    54,
+       0,     0,     0,     0,     0,     0,    25,     0,    18,    29,
+       0,     0,    21,    17,    23,    22,    20,    19,     2,    84,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,    16,
+      15,    77,     0,    78,     5,    34,    72,    39,    73,    74,
+      25,     0,     0,    43,    28,    27,    41,     0,     0,    83,
+      53,     0,     0,     0,    62,    60,     0,     0,     0,    77,
+      75,    76,    47,     6,     8,    12,    10,    30,    32,    35,
+      37,    26,    24,     0,    46,     0,    42,     0,     0,     0,
+       0,     0,    65,    65,     0,     0,    71,     0,     0,     0,
+       0,     0,     0,     0,     0,    14,     0,    44,    40,    85,
+      50,    70,     0,     0,     0,    63,    61,    59,    48,     7,
+       9,    13,    11,    31,    33,    36,    38,    45,    88,     0,
+       0,     0,     0,     0,    64,     0,    86,     0,    69,    68,
+      66,    67,    87,     0,    80
 };
 
 /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-    -110,  -110,   103,   -32,  -110,  -110,  -110,  -110,  -110,  -110,
-     -34,    50,   -23,    84,  -109,  -110,  -110,   -47,  -110,  -110,
-     -26,  -110,  -110,     1,  -110,  -110,  -110,     0,  -110,    78,
-    -110,  -110,   -16,  -110,    -5,  -110,  -110,    16,  -110,  -110,
-    -110,   -46,  -110,    21,  -110,  -110,  -110,  -110,   -21,  -110,
-    -110
+    -104,  -104,   109,   -32,  -104,  -104,  -104,  -104,  -104,  -104,
+     -31,    58,   -22,    92,  -103,  -104,  -104,   -72,  -104,  -104,
+     -26,  -104,  -104,     6,  -104,  -104,  -104,     0,  -104,    83,
+    -104,  -104,   -17,  -104,     2,  -104,  -104,    24,  -104,  -104,
+    -104,   -56,  -104,    12,  -104,  -104,  -104,  -104,   -21,  -104,
+    -104
 };
 
 /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_uint8 yydefgoto[] =
 {
-       0,     2,    15,    82,   113,   114,   116,   115,    37,    61,
-      38,    69,    27,    39,    62,   117,   118,    63,   119,   120,
-      64,    41,   102,   103,   123,    42,    43,     7,     8,    10,
-      49,    11,    16,    44,    83,   109,   108,   130,    45,    46,
-     146,    65,    66,    67,    17,    28,    18,    76,    77,   143,
-     150
+       0,     2,    15,    85,   117,   118,   120,   119,    38,    63,
+      39,    71,    27,    40,    64,   121,   122,    65,   123,   124,
+      66,    42,   105,   106,   127,    43,    44,     7,     8,    10,
+      50,    11,    16,    45,    86,   113,   112,   135,    46,    47,
+     151,    67,    68,    69,    17,    28,    18,    78,    79,   148,
+     156
 };
 
 /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -956,36 +731,38 @@ static const yytype_uint8 yydefgoto[] =
    number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_int16 yytable[] =
 {
-      40,    68,    60,    24,   134,   135,   136,   137,    70,    40,
-       1,    71,    40,    12,    13,    14,    19,    20,    79,    80,
-       3,    30,    85,    31,     4,    32,    33,    34,    57,    58,
-      86,     5,    54,     6,    68,     9,    35,    23,   100,   101,
-      55,    56,    40,    54,    81,    57,    58,    59,    21,    36,
-      25,    55,    56,    12,    13,    26,    57,    58,    59,    90,
-      91,    92,    93,    94,    95,    29,    96,    97,    94,    95,
-     138,   139,   127,   140,   141,    47,    87,    88,    48,   -52,
-      40,    50,    51,    52,    53,    73,    74,    75,   125,    84,
-     101,    71,    89,    99,   147,   104,   105,   106,   107,   121,
-     110,   128,    40,   111,   112,   122,   126,   124,   129,   132,
-     133,   152,   145,   149,   153,   154,   156,   157,    98,    40,
-      22,   151,    72,   142,   148,   131,   144,    78,   155
+      41,    53,    24,    62,    72,    70,    41,    73,    19,    20,
+      41,    12,    13,    41,   139,   140,   141,   142,     1,    81,
+      82,     4,    56,    30,    88,    31,    32,    33,    34,    35,
+      57,    58,    97,    98,    84,    59,    60,    61,    36,    70,
+     103,   104,    99,   100,    41,    56,    12,    13,    14,   143,
+     144,    37,     3,    57,    58,    59,    60,    89,    59,    60,
+      61,    93,    94,    95,    96,    97,    98,   145,   146,    90,
+      91,     5,     6,     9,    21,    23,    25,    26,   131,   133,
+      29,    48,    49,    41,   -52,    51,    76,    52,    54,    75,
+     129,    55,    83,    77,   104,    87,    73,   102,    92,   108,
+     107,   152,   109,   110,   150,   125,    41,   111,   126,   114,
+     115,   116,   132,   134,   128,   137,   130,   138,   159,   158,
+     153,   155,   160,   161,    41,   164,    22,   157,   101,   163,
+     149,    74,   147,    80,   162,     0,   154,   136
 };
 
-static const yytype_uint8 yycheck[] =
+static const yytype_int16 yycheck[] =
 {
-      26,    35,    34,    19,   113,   114,   115,   116,    20,    35,
-       3,    23,    38,     7,     8,     9,    18,    19,    50,    51,
-      38,    10,    54,    12,     0,    14,    15,    16,    36,    37,
-      38,    17,    23,     6,    68,    38,    25,    38,    70,    71,
-      31,    32,    68,    23,    35,    36,    37,    38,     4,    38,
-      38,    31,    32,     7,     8,    21,    36,    37,    38,    27,
-      28,    29,    30,    31,    32,    17,    33,    34,    31,    32,
-     117,   118,   106,   119,   120,     5,    55,    56,    23,    38,
-     106,    23,    23,    23,    23,    22,    17,    38,   104,    38,
-     122,    23,    17,    26,   128,    18,    24,    24,    24,    17,
-      24,    13,   128,    24,    24,    19,    25,    24,    19,    17,
-      17,   145,    11,    19,    17,    17,    26,    17,    68,   145,
-      17,   144,    38,   122,   129,   109,   126,    49,   149
+      26,    32,    19,    35,    20,    36,    32,    23,    18,    19,
+      36,     7,     8,    39,   117,   118,   119,   120,     3,    51,
+      52,     0,    23,    10,    56,    12,    13,    14,    15,    16,
+      31,    32,    31,    32,    35,    36,    37,    38,    25,    70,
+      72,    73,    33,    34,    70,    23,     7,     8,     9,   121,
+     122,    38,    38,    31,    32,    36,    37,    38,    36,    37,
+      38,    27,    28,    29,    30,    31,    32,   123,   124,    57,
+      58,    17,     6,    38,     4,    38,    38,    21,   109,   111,
+      17,     5,    23,   109,    38,    23,    17,    23,    23,    22,
+     107,    23,    12,    38,   126,    38,    23,    26,    17,    24,
+      18,   132,    24,    24,    11,    17,   132,    23,    19,    24,
+      24,    24,    13,    19,    24,    17,    25,    17,    17,   150,
+      24,    19,    17,    17,   150,    17,    17,   149,    70,    26,
+     130,    39,   126,    50,   155,    -1,   134,   113
 };
 
 /* YYSTOS[STATE-NUM] -- The symbol kind of the accessing symbol of
@@ -995,19 +772,20 @@ static const yytype_int8 yystos[] =
        0,     3,    41,    38,     0,    17,     6,    67,    68,    38,
       69,    71,     7,     8,     9,    42,    72,    84,    86,    18,
       19,     4,    42,    38,    72,    38,    21,    52,    85,    17,
-      10,    12,    14,    15,    16,    25,    38,    48,    50,    53,
-      60,    61,    65,    66,    73,    78,    79,     5,    23,    70,
-      23,    23,    23,    23,    23,    31,    32,    36,    37,    38,
-      43,    49,    54,    57,    60,    81,    82,    83,    50,    51,
-      20,    23,    53,    22,    17,    38,    87,    88,    69,    43,
-      43,    35,    43,    74,    38,    43,    38,    83,    83,    17,
-      27,    28,    29,    30,    31,    32,    33,    34,    51,    26,
-      43,    43,    62,    63,    18,    24,    24,    24,    76,    75,
-      24,    24,    24,    44,    45,    47,    46,    55,    56,    58,
-      59,    17,    19,    64,    24,    72,    25,    50,    13,    19,
-      77,    77,    17,    17,    54,    54,    54,    54,    57,    57,
-      81,    81,    63,    89,    67,    11,    80,    50,    74,    19,
-      90,    52,    50,    17,    17,    88,    26,    17
+      10,    12,    13,    14,    15,    16,    25,    38,    48,    50,
+      53,    60,    61,    65,    66,    73,    78,    79,     5,    23,
+      70,    23,    23,    50,    23,    23,    23,    31,    32,    36,
+      37,    38,    43,    49,    54,    57,    60,    81,    82,    83,
+      50,    51,    20,    23,    53,    22,    17,    38,    87,    88,
+      69,    43,    43,    12,    35,    43,    74,    38,    43,    38,
+      83,    83,    17,    27,    28,    29,    30,    31,    32,    33,
+      34,    51,    26,    43,    43,    62,    63,    18,    24,    24,
+      24,    23,    76,    75,    24,    24,    24,    44,    45,    47,
+      46,    55,    56,    58,    59,    17,    19,    64,    24,    72,
+      25,    50,    13,    43,    19,    77,    77,    17,    17,    54,
+      54,    54,    54,    57,    57,    81,    81,    63,    89,    67,
+      11,    80,    50,    24,    74,    19,    90,    52,    50,    17,
+      17,    17,    88,    26,    17
 };
 
 /* YYR1[RULE-NUM] -- Symbol kind of the left-hand side of rule RULE-NUM.  */
@@ -1019,9 +797,9 @@ static const yytype_int8 yyr1[] =
       55,    54,    56,    54,    54,    58,    57,    59,    57,    57,
       60,    61,    62,    62,    63,    64,    64,    65,    66,    67,
       67,    68,    70,    69,    69,    71,    71,    72,    72,    73,
-      75,    74,    76,    74,    77,    77,    78,    79,    80,    80,
-      81,    81,    81,    82,    82,    82,    83,    83,    85,    84,
-      86,    86,    87,    87,    89,    88,    90,    90
+      75,    74,    76,    74,    77,    77,    78,    78,    79,    80,
+      80,    81,    81,    81,    82,    82,    82,    83,    83,    85,
+      84,    86,    86,    87,    87,    89,    88,    90,    90
 };
 
 /* YYR2[RULE-NUM] -- Number of symbols on the right-hand side of rule RULE-NUM.  */
@@ -1033,9 +811,9 @@ static const yytype_int8 yyr2[] =
        0,     4,     0,     4,     1,     0,     4,     0,     4,     1,
        4,     2,     1,     0,     2,     2,     0,     3,     5,     1,
        0,     2,     0,     6,     4,     1,     3,     1,     1,     5,
-       0,     3,     0,     3,     2,     0,     7,     7,     2,     0,
-       3,     1,     1,     1,     2,     2,     1,     1,     0,    11,
-       1,     1,     1,     0,     0,     5,     2,     0
+       0,     3,     0,     3,     2,     0,     7,     7,     7,     2,
+       0,     3,     1,     1,     1,     2,     2,     1,     1,     0,
+      11,     1,     1,     1,     0,     0,     5,     2,     0
 };
 
 
@@ -1457,33 +1235,33 @@ yydestruct (const char *yymsg,
   switch (yykind)
     {
     case YYSYMBOL_cte_string: /* cte_string  */
-#line 317 "PatitoParser.y"
+#line 90 "PatitoParser.y"
             { free(((*yyvaluep).str)); }
-#line 1463 "PatitoParser.tab.c"
+#line 1241 "PatitoParser.tab.c"
         break;
 
     case YYSYMBOL_cte_float: /* cte_float  */
-#line 317 "PatitoParser.y"
+#line 90 "PatitoParser.y"
             { free(((*yyvaluep).str)); }
-#line 1469 "PatitoParser.tab.c"
+#line 1247 "PatitoParser.tab.c"
         break;
 
     case YYSYMBOL_cte_int: /* cte_int  */
-#line 317 "PatitoParser.y"
+#line 90 "PatitoParser.y"
             { free(((*yyvaluep).str)); }
-#line 1475 "PatitoParser.tab.c"
+#line 1253 "PatitoParser.tab.c"
         break;
 
     case YYSYMBOL_id: /* id  */
-#line 317 "PatitoParser.y"
+#line 90 "PatitoParser.y"
             { free(((*yyvaluep).str)); }
-#line 1481 "PatitoParser.tab.c"
+#line 1259 "PatitoParser.tab.c"
         break;
 
     case YYSYMBOL_IdList: /* IdList  */
-#line 318 "PatitoParser.y"
+#line 91 "PatitoParser.y"
             { idlist_destroy(((*yyvaluep).ids)); }
-#line 1487 "PatitoParser.tab.c"
+#line 1265 "PatitoParser.tab.c"
         break;
 
       default:
@@ -1754,95 +1532,77 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* PROGRAMA: Tprogram id semicolon VarsOpcional ProgramaFuncs Tmain BODY Tend  */
-#line 321 "PatitoParser.y"
+#line 94 "PatitoParser.y"
     {
         printf("Function name: %s\n", (yyvsp[-6].str));
         free((yyvsp[-6].str));
     }
-#line 1763 "PatitoParser.tab.c"
+#line 1541 "PatitoParser.tab.c"
     break;
 
   case 5: /* EXPRESION: EXP  */
-#line 334 "PatitoParser.y"
+#line 107 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 1771 "PatitoParser.tab.c"
+#line 1549 "PatitoParser.tab.c"
     break;
 
   case 6: /* $@1: %empty  */
-#line 339 "PatitoParser.y"
-      {
-          stack_push_operator(&operator_stack, gt);
-      }
-#line 1779 "PatitoParser.tab.c"
+#line 112 "PatitoParser.y"
+      {stack_push_operator(&operator_stack, gt);}
+#line 1555 "PatitoParser.tab.c"
     break;
 
   case 7: /* EXPRESION: EXP gt $@1 EXP  */
-#line 343 "PatitoParser.y"
-      {
-          (yyval.type) = reduce_pending_operation();
-      }
-#line 1787 "PatitoParser.tab.c"
+#line 114 "PatitoParser.y"
+      {(yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter); }
+#line 1561 "PatitoParser.tab.c"
     break;
 
   case 8: /* $@2: %empty  */
-#line 348 "PatitoParser.y"
-      {
-          stack_push_operator(&operator_stack, lt);
-      }
-#line 1795 "PatitoParser.tab.c"
+#line 116 "PatitoParser.y"
+            {stack_push_operator(&operator_stack, lt);}
+#line 1567 "PatitoParser.tab.c"
     break;
 
   case 9: /* EXPRESION: EXP lt $@2 EXP  */
-#line 352 "PatitoParser.y"
-      {
-          (yyval.type) = reduce_pending_operation();
-      }
-#line 1803 "PatitoParser.tab.c"
+#line 117 "PatitoParser.y"
+         {(yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);}
+#line 1573 "PatitoParser.tab.c"
     break;
 
   case 10: /* $@3: %empty  */
-#line 357 "PatitoParser.y"
-      {
-          stack_push_operator(&operator_stack, eq);
-      }
-#line 1811 "PatitoParser.tab.c"
+#line 119 "PatitoParser.y"
+             {stack_push_operator(&operator_stack, eq);}
+#line 1579 "PatitoParser.tab.c"
     break;
 
   case 11: /* EXPRESION: EXP eq $@3 EXP  */
-#line 361 "PatitoParser.y"
-      {
-          (yyval.type) = reduce_pending_operation();
-      }
-#line 1819 "PatitoParser.tab.c"
+#line 120 "PatitoParser.y"
+          {(yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);}
+#line 1585 "PatitoParser.tab.c"
     break;
 
   case 12: /* $@4: %empty  */
-#line 366 "PatitoParser.y"
-      {
-          stack_push_operator(&operator_stack, ne);
-      }
-#line 1827 "PatitoParser.tab.c"
+#line 122 "PatitoParser.y"
+             {stack_push_operator(&operator_stack, ne);}
+#line 1591 "PatitoParser.tab.c"
     break;
 
   case 13: /* EXPRESION: EXP ne $@4 EXP  */
-#line 370 "PatitoParser.y"
-      {
-          (yyval.type) = reduce_pending_operation();
-      }
-#line 1835 "PatitoParser.tab.c"
+#line 123 "PatitoParser.y"
+          {(yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);}
+#line 1597 "PatitoParser.tab.c"
     break;
 
   case 14: /* ASSIGN: id assign_op EXPRESION semicolon  */
-#line 380 "PatitoParser.y"
+#line 131 "PatitoParser.y"
       {
           char *expression_operand = NULL;
           int expression_type;
 
-          if (pop_expression_value(
-                  &expression_operand,
-                  &expression_type)) {
+          if (pop_expression_value(&expression_operand, &expression_type,&operand_stack,&type_stack)) {
 
               validate_assignment((yyvsp[-3].str), expression_type);
 
@@ -1859,129 +1619,129 @@ yyreduce:
 
           free((yyvsp[-3].str));
       }
-#line 1863 "PatitoParser.tab.c"
+#line 1623 "PatitoParser.tab.c"
     break;
 
   case 15: /* CTE: cte_int  */
-#line 408 "PatitoParser.y"
+#line 157 "PatitoParser.y"
       {
-          push_expression_value((yyvsp[0].str), Tint);
+          push_expression_value((yyvsp[0].str), Tint,&operand_stack,&type_stack);
 
           (yyval.type) = Tint;
 
           free((yyvsp[0].str));
       }
-#line 1875 "PatitoParser.tab.c"
+#line 1635 "PatitoParser.tab.c"
     break;
 
   case 16: /* CTE: cte_float  */
-#line 417 "PatitoParser.y"
+#line 166 "PatitoParser.y"
       {
-          push_expression_value((yyvsp[0].str), Tfloat);
+          push_expression_value((yyvsp[0].str), Tfloat,&operand_stack,&type_stack);
 
           (yyval.type) = Tfloat;
 
           free((yyvsp[0].str));
       }
-#line 1887 "PatitoParser.tab.c"
+#line 1647 "PatitoParser.tab.c"
     break;
 
   case 30: /* $@5: %empty  */
-#line 452 "PatitoParser.y"
+#line 201 "PatitoParser.y"
       {
           stack_push_operator(&operator_stack, plus);
       }
-#line 1895 "PatitoParser.tab.c"
+#line 1655 "PatitoParser.tab.c"
     break;
 
   case 31: /* EXP: EXP plus $@5 TERMINO  */
-#line 456 "PatitoParser.y"
+#line 205 "PatitoParser.y"
       {
-          (yyval.type) = reduce_pending_operation();
+          (yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
-#line 1903 "PatitoParser.tab.c"
+#line 1663 "PatitoParser.tab.c"
     break;
 
   case 32: /* $@6: %empty  */
-#line 461 "PatitoParser.y"
+#line 210 "PatitoParser.y"
       {
           stack_push_operator(&operator_stack, minus);
       }
-#line 1911 "PatitoParser.tab.c"
+#line 1671 "PatitoParser.tab.c"
     break;
 
   case 33: /* EXP: EXP minus $@6 TERMINO  */
-#line 465 "PatitoParser.y"
+#line 214 "PatitoParser.y"
       {
-          (yyval.type) = reduce_pending_operation();
+          (yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
-#line 1919 "PatitoParser.tab.c"
+#line 1679 "PatitoParser.tab.c"
     break;
 
   case 34: /* EXP: TERMINO  */
-#line 470 "PatitoParser.y"
+#line 219 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 1927 "PatitoParser.tab.c"
+#line 1687 "PatitoParser.tab.c"
     break;
 
   case 35: /* $@7: %empty  */
-#line 479 "PatitoParser.y"
+#line 228 "PatitoParser.y"
       {
           stack_push_operator(&operator_stack, mult);
       }
-#line 1935 "PatitoParser.tab.c"
+#line 1695 "PatitoParser.tab.c"
     break;
 
   case 36: /* TERMINO: TERMINO mult $@7 FACTOR  */
-#line 483 "PatitoParser.y"
+#line 232 "PatitoParser.y"
       {
-          (yyval.type) = reduce_pending_operation();
+          (yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
-#line 1943 "PatitoParser.tab.c"
+#line 1703 "PatitoParser.tab.c"
     break;
 
   case 37: /* $@8: %empty  */
-#line 488 "PatitoParser.y"
+#line 237 "PatitoParser.y"
       {
           stack_push_operator(&operator_stack, divi);
       }
-#line 1951 "PatitoParser.tab.c"
+#line 1711 "PatitoParser.tab.c"
     break;
 
   case 38: /* TERMINO: TERMINO divi $@8 FACTOR  */
-#line 492 "PatitoParser.y"
+#line 241 "PatitoParser.y"
       {
-          (yyval.type) = reduce_pending_operation();
+          (yyval.type) = reduce_pending_operation(&operator_stack,&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
-#line 1959 "PatitoParser.tab.c"
+#line 1719 "PatitoParser.tab.c"
     break;
 
   case 39: /* TERMINO: FACTOR  */
-#line 497 "PatitoParser.y"
+#line 246 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 1967 "PatitoParser.tab.c"
+#line 1727 "PatitoParser.tab.c"
     break;
 
   case 40: /* InnerF_CALL: id lparen FCallInitial rparen  */
-#line 504 "PatitoParser.y"
+#line 253 "PatitoParser.y"
       {
           (yyval.type) = get_function_return_type((yyvsp[-3].str));
           free((yyvsp[-3].str));
       }
-#line 1976 "PatitoParser.tab.c"
+#line 1736 "PatitoParser.tab.c"
     break;
 
   case 47: /* RETURN: Treturn EXPRESION semicolon  */
-#line 526 "PatitoParser.y"
+#line 275 "PatitoParser.y"
       {
           char *operand = NULL;
           int expression_type;
 
-          if (pop_expression_value(&operand, &expression_type)) {
+          if (pop_expression_value(&operand, &expression_type,&operand_stack,&type_stack)) {
               validate_return(expression_type);
 
               quadruples_add(
@@ -1995,11 +1755,11 @@ yyreduce:
               free(operand);
           }
       }
-#line 1999 "PatitoParser.tab.c"
+#line 1759 "PatitoParser.tab.c"
     break;
 
   case 48: /* READ: Tread lparen id rparen semicolon  */
-#line 548 "PatitoParser.y"
+#line 297 "PatitoParser.y"
       {
           validate_read((yyvsp[-2].str));
 
@@ -2013,69 +1773,69 @@ yyreduce:
 
           free((yyvsp[-2].str));
       }
-#line 2017 "PatitoParser.tab.c"
+#line 1777 "PatitoParser.tab.c"
     break;
 
   case 52: /* $@9: %empty  */
-#line 575 "PatitoParser.y"
+#line 324 "PatitoParser.y"
       {
           declare_id_list((yyvsp[-3].ids), (yyvsp[-1].type));
           idlist_destroy((yyvsp[-3].ids));
       }
-#line 2026 "PatitoParser.tab.c"
+#line 1786 "PatitoParser.tab.c"
     break;
 
   case 54: /* VarStart: IdList colon TYPE semicolon  */
-#line 582 "PatitoParser.y"
+#line 331 "PatitoParser.y"
       {
           declare_id_list((yyvsp[-3].ids), (yyvsp[-1].type));
           idlist_destroy((yyvsp[-3].ids));
       }
-#line 2035 "PatitoParser.tab.c"
+#line 1795 "PatitoParser.tab.c"
     break;
 
   case 55: /* IdList: id  */
-#line 590 "PatitoParser.y"
+#line 339 "PatitoParser.y"
       {
           (yyval.ids) = idlist_create((yyvsp[0].str));
       }
-#line 2043 "PatitoParser.tab.c"
+#line 1803 "PatitoParser.tab.c"
     break;
 
   case 56: /* IdList: IdList comma id  */
-#line 595 "PatitoParser.y"
+#line 344 "PatitoParser.y"
       {
           (yyval.ids) = idlist_append((yyvsp[-2].ids), (yyvsp[0].str));
       }
-#line 2051 "PatitoParser.tab.c"
+#line 1811 "PatitoParser.tab.c"
     break;
 
   case 57: /* TYPE: Tint  */
-#line 602 "PatitoParser.y"
+#line 351 "PatitoParser.y"
       {
           (yyval.type) = Tint;
       }
-#line 2059 "PatitoParser.tab.c"
+#line 1819 "PatitoParser.tab.c"
     break;
 
   case 58: /* TYPE: Tfloat  */
-#line 607 "PatitoParser.y"
+#line 356 "PatitoParser.y"
       {
           (yyval.type) = Tfloat;
       }
-#line 2067 "PatitoParser.tab.c"
+#line 1827 "PatitoParser.tab.c"
     break;
 
   case 60: /* $@10: %empty  */
-#line 617 "PatitoParser.y"
+#line 366 "PatitoParser.y"
       {
-          emit_print();
+          emit_print(&quadruples,&operand_stack,&type_stack);
       }
-#line 2075 "PatitoParser.tab.c"
+#line 1835 "PatitoParser.tab.c"
     break;
 
   case 62: /* $@11: %empty  */
-#line 623 "PatitoParser.y"
+#line 372 "PatitoParser.y"
       {
           quadruples_add(
               &quadruples,
@@ -2087,141 +1847,150 @@ yyreduce:
 
           free((yyvsp[0].str));
       }
-#line 2091 "PatitoParser.tab.c"
+#line 1851 "PatitoParser.tab.c"
     break;
 
   case 66: /* CYCLE: Twhile lparen EXPRESION rparen Tdo STATEMENT semicolon  */
-#line 644 "PatitoParser.y"
+#line 393 "PatitoParser.y"
       {
           validate_condition((yyvsp[-4].type));
-          discard_expression();
+          discard_expression(&operand_stack,&type_stack);
       }
-#line 2100 "PatitoParser.tab.c"
+#line 1860 "PatitoParser.tab.c"
     break;
 
-  case 67: /* CONDITION: Tif lparen EXPRESION rparen STATEMENT ConditionElse semicolon  */
-#line 652 "PatitoParser.y"
+  case 67: /* CYCLE: Tdo STATEMENT Twhile lparen EXPRESION rparen semicolon  */
+#line 398 "PatitoParser.y"
+      {
+          validate_condition((yyvsp[-2].type));
+          discard_expression(&operand_stack,&type_stack);
+      }
+#line 1869 "PatitoParser.tab.c"
+    break;
+
+  case 68: /* CONDITION: Tif lparen EXPRESION rparen STATEMENT ConditionElse semicolon  */
+#line 406 "PatitoParser.y"
       {
           validate_condition((yyvsp[-4].type));
-          discard_expression();
+          discard_expression(&operand_stack,&type_stack);
       }
-#line 2109 "PatitoParser.tab.c"
+#line 1878 "PatitoParser.tab.c"
     break;
 
-  case 70: /* FACTOR: lparen EXPRESION rparen  */
-#line 665 "PatitoParser.y"
+  case 71: /* FACTOR: lparen EXPRESION rparen  */
+#line 419 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[-1].type);
       }
-#line 2117 "PatitoParser.tab.c"
+#line 1886 "PatitoParser.tab.c"
     break;
 
-  case 71: /* FACTOR: InnerF_CALL  */
-#line 670 "PatitoParser.y"
+  case 72: /* FACTOR: InnerF_CALL  */
+#line 424 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 2125 "PatitoParser.tab.c"
+#line 1894 "PatitoParser.tab.c"
     break;
 
-  case 72: /* FACTOR: FactorStart  */
-#line 675 "PatitoParser.y"
+  case 73: /* FACTOR: FactorStart  */
+#line 429 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 2133 "PatitoParser.tab.c"
+#line 1902 "PatitoParser.tab.c"
     break;
 
-  case 73: /* FactorStart: FactorContinuacion  */
-#line 682 "PatitoParser.y"
+  case 74: /* FactorStart: FactorContinuacion  */
+#line 436 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 2141 "PatitoParser.tab.c"
+#line 1910 "PatitoParser.tab.c"
     break;
 
-  case 74: /* FactorStart: plus FactorContinuacion  */
-#line 687 "PatitoParser.y"
+  case 75: /* FactorStart: plus FactorContinuacion  */
+#line 441 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 2149 "PatitoParser.tab.c"
+#line 1918 "PatitoParser.tab.c"
     break;
 
-  case 75: /* FactorStart: minus FactorContinuacion  */
-#line 692 "PatitoParser.y"
+  case 76: /* FactorStart: minus FactorContinuacion  */
+#line 446 "PatitoParser.y"
       {
-          (yyval.type) = apply_unary_minus();
+          (yyval.type) = apply_unary_minus(&quadruples,&operand_stack,&type_stack,&temp_counter);
       }
-#line 2157 "PatitoParser.tab.c"
+#line 1926 "PatitoParser.tab.c"
     break;
 
-  case 76: /* FactorContinuacion: id  */
-#line 699 "PatitoParser.y"
+  case 77: /* FactorContinuacion: id  */
+#line 453 "PatitoParser.y"
       {
           int variable_type = get_variable_type((yyvsp[0].str));
 
-          push_expression_value((yyvsp[0].str), variable_type);
+          push_expression_value((yyvsp[0].str), variable_type,&operand_stack,&type_stack);
 
           (yyval.type) = variable_type;
 
           free((yyvsp[0].str));
       }
-#line 2171 "PatitoParser.tab.c"
+#line 1940 "PatitoParser.tab.c"
     break;
 
-  case 77: /* FactorContinuacion: CTE  */
-#line 710 "PatitoParser.y"
+  case 78: /* FactorContinuacion: CTE  */
+#line 464 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 2179 "PatitoParser.tab.c"
+#line 1948 "PatitoParser.tab.c"
     break;
 
-  case 78: /* $@12: %empty  */
-#line 717 "PatitoParser.y"
+  case 79: /* $@12: %empty  */
+#line 471 "PatitoParser.y"
       {
           begin_function((yyvsp[0].str), (yyvsp[-1].type));
           free((yyvsp[0].str));
       }
-#line 2188 "PatitoParser.tab.c"
+#line 1957 "PatitoParser.tab.c"
     break;
 
-  case 79: /* FUNCS: FuncsType id $@12 lparen FuncsIDsOpcional rparen lbracket VarsOpcional BODY rbracket semicolon  */
-#line 723 "PatitoParser.y"
+  case 80: /* FUNCS: FuncsType id $@12 lparen FuncsIDsOpcional rparen lbracket VarsOpcional BODY rbracket semicolon  */
+#line 477 "PatitoParser.y"
       {
           finish_function();
       }
-#line 2196 "PatitoParser.tab.c"
+#line 1965 "PatitoParser.tab.c"
     break;
 
-  case 80: /* FuncsType: Tvoid  */
-#line 730 "PatitoParser.y"
+  case 81: /* FuncsType: Tvoid  */
+#line 484 "PatitoParser.y"
       {
           (yyval.type) = Tvoid;
       }
-#line 2204 "PatitoParser.tab.c"
+#line 1973 "PatitoParser.tab.c"
     break;
 
-  case 81: /* FuncsType: TYPE  */
-#line 735 "PatitoParser.y"
+  case 82: /* FuncsType: TYPE  */
+#line 489 "PatitoParser.y"
       {
           (yyval.type) = (yyvsp[0].type);
       }
-#line 2212 "PatitoParser.tab.c"
+#line 1981 "PatitoParser.tab.c"
     break;
 
-  case 84: /* $@13: %empty  */
-#line 747 "PatitoParser.y"
+  case 85: /* $@13: %empty  */
+#line 501 "PatitoParser.y"
       {
           declare_parameter((yyvsp[-2].str), (yyvsp[0].type));
           free((yyvsp[-2].str));
       }
-#line 2221 "PatitoParser.tab.c"
+#line 1990 "PatitoParser.tab.c"
     break;
 
 
-#line 2225 "PatitoParser.tab.c"
+#line 1994 "PatitoParser.tab.c"
 
       default: break;
     }
@@ -2445,7 +2214,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 759 "PatitoParser.y"
+#line 513 "PatitoParser.y"
 
 
 void yyerror(const char *s) {
